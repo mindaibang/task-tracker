@@ -1,6 +1,6 @@
 # streamlit_app.py
 # Task Tracker App (Streamlit + SQLite)
-# Phiên bản fix đầy đủ cho SQLAlchemy 2.0 + Streamlit >= 1.40
+# Phiên bản hoàn chỉnh 2025 — fix SQLAlchemy 2.0, st.rerun() và auto commit DB
 
 import streamlit as st
 from datetime import datetime, date
@@ -33,52 +33,48 @@ def init_db(engine):
     meta.create_all(engine)
 
 # ---------------------------
-# CÁC HÀM TƯƠNG TÁC DATABASE
+# CÁC HÀM TƯƠNG TÁC DATABASE (ĐÃ THÊM COMMIT)
 # ---------------------------
 def fetch_all(engine):
-    conn = engine.connect()
-    meta = MetaData()
-    meta.reflect(bind=engine)
-    tasks = meta.tables["tasks"]
-    stmt = select(tasks).order_by(tasks.c.done, tasks.c.priority, tasks.c.due_date.nulls_last())
-    result = conn.execute(stmt).fetchall()
-    conn.close()
-    return [dict(row._mapping) for row in result]
+    with engine.connect() as conn:
+        meta = MetaData()
+        meta.reflect(bind=engine)
+        tasks = meta.tables["tasks"]
+        stmt = select(tasks).order_by(tasks.c.done, tasks.c.priority, tasks.c.due_date.nulls_last())
+        result = conn.execute(stmt).fetchall()
+        return [dict(row._mapping) for row in result]
 
 def insert_task(engine, title, detail, due_date, priority, tags):
-    conn = engine.connect()
-    meta = MetaData()
-    meta.reflect(bind=engine)
-    tasks = meta.tables["tasks"]
-    ins = tasks.insert().values(
-        title=title,
-        detail=detail,
-        created_at=datetime.utcnow().isoformat(),
-        due_date=due_date.isoformat() if due_date else None,
-        priority=priority,
-        tags=tags,
-        done=False
-    )
-    conn.execute(ins)
-    conn.close()
+    with engine.begin() as conn:  # ✅ auto commit
+        meta = MetaData()
+        meta.reflect(bind=engine)
+        tasks = meta.tables["tasks"]
+        ins = tasks.insert().values(
+            title=title,
+            detail=detail,
+            created_at=datetime.utcnow().isoformat(),
+            due_date=due_date.isoformat() if due_date else None,
+            priority=priority,
+            tags=tags,
+            done=False
+        )
+        conn.execute(ins)
 
 def update_task_done(engine, task_id, done):
-    conn = engine.connect()
-    meta = MetaData()
-    meta.reflect(bind=engine)
-    tasks = meta.tables["tasks"]
-    upd = tasks.update().where(tasks.c.id == task_id).values(done=done)
-    conn.execute(upd)
-    conn.close()
+    with engine.begin() as conn:  # ✅ auto commit
+        meta = MetaData()
+        meta.reflect(bind=engine)
+        tasks = meta.tables["tasks"]
+        upd = tasks.update().where(tasks.c.id == task_id).values(done=done)
+        conn.execute(upd)
 
 def delete_task(engine, task_id):
-    conn = engine.connect()
-    meta = MetaData()
-    meta.reflect(bind=engine)
-    tasks = meta.tables["tasks"]
-    d = tasks.delete().where(tasks.c.id == task_id)
-    conn.execute(d)
-    conn.close()
+    with engine.begin() as conn:  # ✅ auto commit
+        meta = MetaData()
+        meta.reflect(bind=engine)
+        tasks = meta.tables["tasks"]
+        d = tasks.delete().where(tasks.c.id == task_id)
+        conn.execute(d)
 
 # ---------------------------
 # GIAO DIỆN STREAMLIT
@@ -102,7 +98,7 @@ with st.sidebar.form("add_task_form", clear_on_submit=True):
         if title.strip():
             insert_task(engine, title, detail, due, priority, tags)
             st.success("✅ Đã thêm công việc!")
-            st.rerun()  # ✅ thay cho st.experimental_rerun()
+            st.rerun()  # ✅ cập nhật danh sách ngay
         else:
             st.warning("❗ Vui lòng nhập tiêu đề công việc.")
 
@@ -120,7 +116,7 @@ else:
             checked = st.checkbox("", value=row["done"], key=row["id"])
             if checked != row["done"]:
                 update_task_done(engine, row["id"], checked)
-                st.rerun()  # ✅ thay cho st.experimental_rerun()
+                st.rerun()
         with c2:
             st.write(f"**{row['title']}**")
             st.caption(f"Ưu tiên: {row['priority']} | Hạn: {row['due_date']} | Tags: {row['tags']}")
@@ -128,7 +124,7 @@ else:
                 st.write(row["detail"])
             if st.button("🗑️ Xóa", key=f"del_{row['id']}"):
                 delete_task(engine, row["id"])
-                st.rerun()  # ✅ thay cho st.experimental_rerun()
+                st.rerun()
 
 # ---- Xuất file CSV ----
 st.subheader("📦 Xuất dữ liệu")
