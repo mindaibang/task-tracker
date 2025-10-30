@@ -1,23 +1,18 @@
 # streamlit_app.py
-# Simple Personal Task Tracker (Streamlit + SQLite)
-# Dành cho người mới học Python web
+# Task Tracker App (Streamlit + SQLite)
+# Phiên bản fix cho SQLAlchemy 2.0 - tương thích Streamlit Cloud
 
 import streamlit as st
 from datetime import datetime, date
 import pandas as pd
-import sqlite3
-from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, Boolean
-from sqlalchemy.sql import select
+from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, Boolean, select
 
 # ---------------------------
-# CẤU HÌNH CƠ BẢN
+# CẤU HÌNH DATABASE
 # ---------------------------
 DB_FILENAME = "tasks.db"
 DB_URL = f"sqlite:///{DB_FILENAME}"
 
-# ---------------------------
-# HÀM KHỞI TẠO DATABASE
-# ---------------------------
 def get_engine():
     engine = create_engine(DB_URL, connect_args={"check_same_thread": False})
     return engine
@@ -38,22 +33,22 @@ def init_db(engine):
     meta.create_all(engine)
 
 # ---------------------------
-# CÁC HÀM XỬ LÝ DỮ LIỆU
+# CÁC HÀM TƯƠNG TÁC DATABASE
 # ---------------------------
 def fetch_all(engine):
     conn = engine.connect()
-    meta = MetaData(bind=engine)
-    meta.reflect()
+    meta = MetaData()
+    meta.reflect(bind=engine)
     tasks = meta.tables["tasks"]
-    sel = select([tasks]).order_by(tasks.c.done, tasks.c.priority, tasks.c.due_date.nulls_last())
-    res = conn.execute(sel).fetchall()
+    stmt = select(tasks).order_by(tasks.c.done, tasks.c.priority, tasks.c.due_date.nulls_last())
+    result = conn.execute(stmt).fetchall()
     conn.close()
-    return [dict(row) for row in res]
+    return [dict(row._mapping) for row in result]
 
 def insert_task(engine, title, detail, due_date, priority, tags):
     conn = engine.connect()
-    meta = MetaData(bind=engine)
-    meta.reflect()
+    meta = MetaData()
+    meta.reflect(bind=engine)
     tasks = meta.tables["tasks"]
     ins = tasks.insert().values(
         title=title,
@@ -69,8 +64,8 @@ def insert_task(engine, title, detail, due_date, priority, tags):
 
 def update_task_done(engine, task_id, done):
     conn = engine.connect()
-    meta = MetaData(bind=engine)
-    meta.reflect()
+    meta = MetaData()
+    meta.reflect(bind=engine)
     tasks = meta.tables["tasks"]
     upd = tasks.update().where(tasks.c.id == task_id).values(done=done)
     conn.execute(upd)
@@ -78,8 +73,8 @@ def update_task_done(engine, task_id, done):
 
 def delete_task(engine, task_id):
     conn = engine.connect()
-    meta = MetaData(bind=engine)
-    meta.reflect()
+    meta = MetaData()
+    meta.reflect(bind=engine)
     tasks = meta.tables["tasks"]
     d = tasks.delete().where(tasks.c.id == task_id)
     conn.execute(d)
