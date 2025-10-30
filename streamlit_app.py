@@ -1,6 +1,6 @@
 # streamlit_app.py
 # Task Tracker App (Streamlit + SQLite)
-# Phiên bản fix cho SQLAlchemy 2.0 - tương thích Streamlit Cloud
+# Phiên bản fix đầy đủ cho SQLAlchemy 2.0 + Streamlit >= 1.40
 
 import streamlit as st
 from datetime import datetime, date
@@ -102,7 +102,7 @@ with st.sidebar.form("add_task_form", clear_on_submit=True):
         if title.strip():
             insert_task(engine, title, detail, due, priority, tags)
             st.success("✅ Đã thêm công việc!")
-            st.experimental_rerun()
+            st.rerun()  # ✅ thay cho st.experimental_rerun()
         else:
             st.warning("❗ Vui lòng nhập tiêu đề công việc.")
 
@@ -120,7 +120,7 @@ else:
             checked = st.checkbox("", value=row["done"], key=row["id"])
             if checked != row["done"]:
                 update_task_done(engine, row["id"], checked)
-                st.experimental_rerun()
+                st.rerun()  # ✅ thay cho st.experimental_rerun()
         with c2:
             st.write(f"**{row['title']}**")
             st.caption(f"Ưu tiên: {row['priority']} | Hạn: {row['due_date']} | Tags: {row['tags']}")
@@ -128,7 +128,7 @@ else:
                 st.write(row["detail"])
             if st.button("🗑️ Xóa", key=f"del_{row['id']}"):
                 delete_task(engine, row["id"])
-                st.experimental_rerun()
+                st.rerun()  # ✅ thay cho st.experimental_rerun()
 
 # ---- Xuất file CSV ----
 st.subheader("📦 Xuất dữ liệu")
