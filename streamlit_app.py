@@ -1,11 +1,8 @@
-# streamlit_app.py
-# Task Tracker App (Streamlit + SQLite)
-# Phiên bản hoàn chỉnh 2025 — fix SQLAlchemy 2.0, st.rerun() và auto commit DB
-
 import streamlit as st
 from datetime import datetime, date
 import pandas as pd
 from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, Boolean, select
+import plotly.express as px
 
 # ---------------------------
 # CẤU HÌNH DATABASE
@@ -33,7 +30,7 @@ def init_db(engine):
     meta.create_all(engine)
 
 # ---------------------------
-# CÁC HÀM TƯƠNG TÁC DATABASE (ĐÃ THÊM COMMIT)
+# CÁC HÀM TƯƠNG TÁC DATABASE
 # ---------------------------
 def fetch_all(engine):
     with engine.connect() as conn:
@@ -45,7 +42,7 @@ def fetch_all(engine):
         return [dict(row._mapping) for row in result]
 
 def insert_task(engine, title, detail, due_date, priority, tags):
-    with engine.begin() as conn:  # ✅ auto commit
+    with engine.begin() as conn:
         meta = MetaData()
         meta.reflect(bind=engine)
         tasks = meta.tables["tasks"]
@@ -61,7 +58,7 @@ def insert_task(engine, title, detail, due_date, priority, tags):
         conn.execute(ins)
 
 def update_task_done(engine, task_id, done):
-    with engine.begin() as conn:  # ✅ auto commit
+    with engine.begin() as conn:
         meta = MetaData()
         meta.reflect(bind=engine)
         tasks = meta.tables["tasks"]
@@ -69,7 +66,7 @@ def update_task_done(engine, task_id, done):
         conn.execute(upd)
 
 def delete_task(engine, task_id):
-    with engine.begin() as conn:  # ✅ auto commit
+    with engine.begin() as conn:
         meta = MetaData()
         meta.reflect(bind=engine)
         tasks = meta.tables["tasks"]
@@ -79,56 +76,100 @@ def delete_task(engine, task_id):
 # ---------------------------
 # GIAO DIỆN STREAMLIT
 # ---------------------------
-st.set_page_config(page_title="Task Tracker", layout="centered")
+st.set_page_config(page_title="Task Tracker", layout="wide")
 st.title("📋 Task Tracker — Theo dõi công việc cá nhân")
 
 engine = get_engine()
 init_db(engine)
 
-# ---- Form thêm công việc mới ----
-st.sidebar.header("➕ Thêm công việc mới")
-with st.sidebar.form("add_task_form", clear_on_submit=True):
-    title = st.text_input("Tiêu đề công việc")
-    detail = st.text_area("Chi tiết")
-    due = st.date_input("Ngày hoàn thành (tùy chọn)")
-    priority = st.selectbox("Mức ưu tiên", [1, 2, 3], format_func=lambda x: {1: "Cao", 2: "Trung bình", 3: "Thấp"}[x])
-    tags = st.text_input("Từ khóa (tags)")
-    submitted = st.form_submit_button("Thêm")
-    if submitted:
-        if title.strip():
-            insert_task(engine, title, detail, due, priority, tags)
-            st.success("✅ Đã thêm công việc!")
-            st.rerun()  # ✅ cập nhật danh sách ngay
-        else:
-            st.warning("❗ Vui lòng nhập tiêu đề công việc.")
+# Tabs chính
+tab1, tab2, tab3 = st.tabs(["📥 Nhập công việc", "📊 Theo dõi công việc", "📈 Dashboard"])
 
-# ---- Hiển thị danh sách ----
-st.subheader("📋 Danh sách công việc")
-
-rows = fetch_all(engine)
-if not rows:
-    st.info("Chưa có công việc nào.")
-else:
-    df = pd.DataFrame(rows)
-    for _, row in df.iterrows():
-        c1, c2 = st.columns([0.1, 0.9])
-        with c1:
-            checked = st.checkbox("", value=row["done"], key=row["id"])
-            if checked != row["done"]:
-                update_task_done(engine, row["id"], checked)
+# ==============================
+# TAB 1: NHẬP CÔNG VIỆC
+# ==============================
+with tab1:
+    st.header("➕ Thêm công việc mới")
+    with st.form("add_task_form", clear_on_submit=True):
+        title = st.text_input("Tiêu đề công việc")
+        detail = st.text_area("Chi tiết công việc")
+        due = st.date_input("Ngày hoàn thành (tùy chọn)")
+        priority = st.selectbox("Mức ưu tiên", [1, 2, 3], format_func=lambda x: {1: "Cao", 2: "Trung bình", 3: "Thấp"}[x])
+        tags = st.text_input("Từ khóa (tags)")
+        submitted = st.form_submit_button("Thêm công việc")
+        if submitted:
+            if title.strip():
+                insert_task(engine, title, detail, due, priority, tags)
+                st.success("✅ Đã thêm công việc!")
                 st.rerun()
-        with c2:
-            st.write(f"**{row['title']}**")
-            st.caption(f"Ưu tiên: {row['priority']} | Hạn: {row['due_date']} | Tags: {row['tags']}")
-            if row["detail"]:
-                st.write(row["detail"])
-            if st.button("🗑️ Xóa", key=f"del_{row['id']}"):
-                delete_task(engine, row["id"])
-                st.rerun()
+            else:
+                st.warning("❗ Vui lòng nhập tiêu đề công việc.")
 
-# ---- Xuất file CSV ----
-st.subheader("📦 Xuất dữ liệu")
-if st.button("Tải danh sách CSV"):
-    df = pd.DataFrame(fetch_all(engine))
-    csv = df.to_csv(index=False).encode("utf-8")
-    st.download_button("Tải xuống", csv, "tasks.csv", "text/csv")
+# ==============================
+# TAB 2: THEO DÕI CÔNG VIỆC
+# ==============================
+with tab2:
+    st.header("📋 Danh sách công việc")
+    rows = fetch_all(engine)
+
+    if not rows:
+        st.info("Chưa có công việc nào.")
+    else:
+        df = pd.DataFrame(rows)
+        df_display = df.copy()
+        df_display["Trạng thái"] = df_display["done"].map({True: "✅ Hoàn thành", False: "🕓 Chưa xong"})
+        df_display["Mức ưu tiên"] = df_display["priority"].map({1: "Cao", 2: "Trung bình", 3: "Thấp"})
+        df_display = df_display.rename(columns={
+            "title": "Tiêu đề",
+            "detail": "Chi tiết",
+            "due_date": "Hạn hoàn thành",
+            "tags": "Tags"
+        })[["id", "Tiêu đề", "Chi tiết", "Hạn hoàn thành", "Mức ưu tiên", "Tags", "Trạng thái"]]
+
+        st.dataframe(df_display, use_container_width=True)
+
+        # Tác vụ cập nhật
+        selected_id = st.selectbox("Chọn ID công việc để cập nhật:", df_display["id"])
+        action = st.radio("Hành động", ["Đánh dấu hoàn thành", "Xóa công việc"])
+        if st.button("Thực hiện"):
+            if action == "Đánh dấu hoàn thành":
+                update_task_done(engine, int(selected_id), True)
+                st.success("🎯 Đã đánh dấu hoàn thành!")
+            else:
+                delete_task(engine, int(selected_id))
+                st.warning("🗑️ Đã xóa công việc!")
+            st.rerun()
+
+# ==============================
+# TAB 3: DASHBOARD
+# ==============================
+with tab3:
+    st.header("📈 Thống kê công việc")
+
+    rows = fetch_all(engine)
+    if not rows:
+        st.info("Chưa có dữ liệu thống kê.")
+    else:
+        df = pd.DataFrame(rows)
+
+        col1, col2, col3 = st.columns(3)
+        total_tasks = len(df)
+        done_tasks = df["done"].sum()
+        undone_tasks = total_tasks - done_tasks
+        col1.metric("Tổng số công việc", total_tasks)
+        col2.metric("Đã hoàn thành", done_tasks)
+        col3.metric("Chưa hoàn thành", undone_tasks)
+
+        st.divider()
+        # Biểu đồ trạng thái
+        fig1 = px.pie(df, names="done", title="Tỷ lệ hoàn thành", color="done",
+                      color_discrete_map={True: "green", False: "red"},
+                      labels={"done": "Trạng thái"})
+        fig1.update_traces(textinfo="percent+label")
+        st.plotly_chart(fig1, use_container_width=True)
+
+        # Biểu đồ theo mức ưu tiên
+        fig2 = px.histogram(df, x="priority", color="done",
+                            barmode="group", title="Số lượng công việc theo mức ưu tiên",
+                            labels={"priority": "Mức ưu tiên", "count": "Số lượng"})
+        st.plotly_chart(fig2, use_container_width=True)
